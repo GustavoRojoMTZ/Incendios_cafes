@@ -1,0 +1,2216 @@
+---
+  lang: es
+---
+
+# Estudio espacial para la localización de brigadas contra incendios {.unnumbered}
+
+## Planteamiento general
+
+::: {style="text-align: justify"}
+La localización de brigadas contra incendios forestales constituye un problema de decisión espacial en el que debe determinarse un conjunto limitado de ubicaciones desde las cuales sea posible atender, en un tiempo razonable, las zonas con mayor recurrencia y afectación histórica.
+
+El problema no consiste únicamente en identificar los lugares donde se ha registrado el mayor número de incendios. También es necesario encontrar una configuración espacial de brigadas que permita maximizar la cobertura del riesgo, considerando simultáneamente:
+:::
+
+- la cantidad de recursos disponibles;
+- la distribución espacial de los incendios;
+- la magnitud de la superficie afectada;
+- la persistencia temporal de los eventos;
+- la distancia entre las brigadas y las zonas de riesgo;
+- el tiempo máximo aceptable de respuesta.
+
+::: {style="text-align: justify"}
+Desde la perspectiva de la investigación de operaciones, este problema pertenece a la familia de los modelos de **localización-asignación**. En este tipo de modelos existe un conjunto de unidades espaciales que generan una demanda de servicio y un conjunto de sitios candidatos en los que pueden instalarse las unidades de atención.
+
+En el presente análisis, las unidades de demanda corresponden a celdas hexagonales distribuidas sobre el territorio de Chiapas. Por su parte, los sitios candidatos se construyen inicialmente a partir de puntos representativos de los municipios del estado.
+
+La demanda de cada celda se expresa mediante un índice compuesto de riesgo que integra tres dimensiones:
+:::
+
+1. frecuencia histórica de incendios;
+2. superficie acumulada afectada;
+3. persistencia temporal de los eventos.
+
+::: {style="text-align: justify"}
+La selección de las ubicaciones se realiza mediante un modelo de **máxima cobertura ponderada**, derivado del problema de máxima cobertura de localización propuesto por @church1974maximal. Este modelo permite seleccionar un número fijo de brigadas y maximizar la cantidad total de riesgo que puede atenderse dentro de un tiempo de respuesta previamente establecido.
+:::
+
+La metodología se desarrolla en cinco componentes principales:
+
+1. preparación y validación de los registros de incendios;
+2. discretización del territorio mediante una cuadrícula hexagonal;
+3. construcción del índice espacial de riesgo;
+4. generación de sitios candidatos y de la matriz de tiempos de respuesta;
+5. solución del modelo de máxima cobertura y evaluación de los resultados.
+
+::: {style="text-align: justify"}
+El procedimiento se implementa en el lenguaje de programación estadística R mediante estructuras espaciales basadas en el estándar *simple features*. Este estándar permite representar puntos, líneas y polígonos, así como realizar operaciones de intersección, transformación cartográfica, medición de distancias y unión espacial [@pebesma2018simple].
+:::
+
+---
+
+## Área y periodo de estudio
+
+::: {style="text-align: justify"}
+El área de estudio corresponde al estado de Chiapas, México. El análisis utiliza registros georreferenciados de incendios forestales correspondientes al periodo 2022–2026.
+
+Cada registro representa un incendio individual e incluye, como mínimo, las siguientes variables:
+:::
+
+- latitud;
+- longitud;
+- año de ocurrencia;
+- municipio;
+- superficie afectada en hectáreas;
+- posible causa del incendio;
+- tipo de vegetación afectada.
+
+::: {style="text-align: justify"}
+La unidad original de observación es el evento individual de incendio. Sin embargo, para formular el problema de localización, los eventos se agregan espacialmente en celdas hexagonales.
+
+Esta agregación permite transformar una distribución irregular de puntos en un conjunto finito de unidades de demanda. Cada unidad espacial recibe un valor cuantitativo de riesgo que posteriormente se utiliza como ponderador en el modelo de optimización.
+
+El periodo 2022–2026 debe considerarse relativamente corto para identificar patrones estructurales de incendios forestales de largo plazo. Por esta razón, los resultados representan una propuesta basada en los datos disponibles y no una caracterización definitiva del riesgo histórico en Chiapas.
+:::
+
+La incorporación de un periodo más amplio permitiría:
+
+- identificar con mayor precisión las zonas de recurrencia persistente;
+- disminuir la influencia de años extraordinarios;
+- estudiar cambios en la distribución espacial del riesgo;
+- realizar una validación temporal más robusta;
+- mejorar la estabilidad de las ubicaciones seleccionadas.
+
+---
+
+## Preparación y validación de los datos
+
+::: {style="text-align: justify"}
+Los archivos anuales de incendios se integran en una sola base de datos. Durante la lectura de cada archivo se identifica el año correspondiente a partir del nombre del documento y se incorpora como una variable adicional.
+
+Posteriormente, las bases se combinan por filas para construir un conjunto de datos único.
+
+Las variables de latitud, longitud y superficie se convierten a formato numérico. Se excluyen las observaciones que presentan alguna de las siguientes condiciones:
+:::
+
+- ausencia de latitud;
+- ausencia de longitud;
+- ausencia de superficie afectada;
+- superficie menor o igual que cero;
+- coordenadas fuera del intervalo geográfico de Chiapas;
+- puntos ubicados fuera del polígono oficial del estado.
+
+::: {style="text-align: justify"}
+La eliminación de observaciones sin información espacial válida es necesaria porque la asignación a las celdas y el cálculo de las distancias dependen directamente de la ubicación geográfica.
+
+No obstante, esta depuración puede introducir sesgos cuando la ausencia de coordenadas no ocurre de manera aleatoria. Por ejemplo, si los incendios registrados en zonas remotas presentan con mayor frecuencia información incompleta, dichas regiones podrían quedar subrepresentadas en el modelo.
+
+Los registros de incendios se construyen originalmente en el sistema geográfico WGS 84, identificado mediante el código EPSG:4326. En este sistema, la latitud y la longitud se expresan en grados.
+
+Las coordenadas geográficas no son adecuadas para crear una cuadrícula con dimensiones métricas constantes ni para calcular directamente distancias en kilómetros. Por esta razón, los incendios y las capas territoriales se transforman al sistema proyectado México ITRF2008 / Lambert Conformal Conic, identificado mediante el código EPSG:6372.
+:::
+
+Esta proyección expresa las coordenadas en metros y permite efectuar de manera consistente:
+
+- mediciones de distancia;
+- construcción de cuadrículas;
+- intersecciones espaciales;
+- cálculo de superficies;
+- asignación de puntos a polígonos.
+
+::: {style="text-align: justify"}
+Antes de realizar las operaciones espaciales, las geometrías deben validarse y, en caso necesario, repararse. Asimismo, las colecciones geométricas producidas por algunas intersecciones deben convertirse a tipos homogéneos, como `POLYGON` o `MULTIPOLYGON`.
+
+Esta homologación es necesaria para evitar errores de representación y problemas durante la conversión de los mapas a formatos interactivos.
+:::
+
+---
+
+## Representación exploratoria mediante suavizado espacial
+
+::: {style="text-align: justify"}
+Antes de resolver el problema de localización se construye una representación exploratoria de la distribución espacial de los incendios mediante una estimación de densidad kernel ponderada por superficie.
+
+Sea $s_k$ la ubicación del incendio $k$ y sea $A_k$ la superficie afectada por dicho evento. La intensidad espacial ponderada en una ubicación $s$ puede expresarse como:
+:::
+
+
+$$
+\widehat{\lambda}_{h}(s)
+=
+\sum_{k=1}^{N}
+A_k
+\frac{1}{h^2}
+K\left(
+\frac{\lVert s-s_k\rVert}{h}
+\right).
+$$ {#eq-kernel}
+
+En esta expresión:
+
+- $N$ es el número total de incendios;
+- $K(\cdot)$ es una función kernel;
+- $h$ es el parámetro de suavizado;
+- $\lVert s-s_k\rVert$ es la distancia entre la ubicación evaluada y el incendio $k$;
+- $A_k$ es la superficie afectada y funciona como ponderador.
+
+::: {style="text-align: justify"}
+El parámetro $h$, también denominado ancho de banda, controla el grado de suavizado de la superficie.
+
+Un valor pequeño de $h$ produce concentraciones locales más definidas y cercanas a los puntos originales. Un valor grande genera superficies más continuas, pero puede ocultar variaciones locales importantes.
+
+Los fundamentos de la estimación de densidad para patrones espaciales de puntos pueden consultarse en @baddeley2015spatial y @baddeley2005spatstat.
+
+Para facilitar la interpretación gráfica, la intensidad estimada se normaliza entre cero y uno:
+:::
+
+$$
+I^{\mathrm{rel}}(s)
+=
+\frac{
+\widehat{\lambda}_{h}(s)
+-
+\min\left\{\widehat{\lambda}_{h}\right\}
+}{
+\max\left\{\widehat{\lambda}_{h}\right\}
+-
+\min\left\{\widehat{\lambda}_{h}\right\}
+}.
+$$ {#eq-intensidad-relativa}
+
+La interpretación de esta escala es la siguiente:
+
+- valores cercanos a cero indican una intensidad espacial relativa baja;
+- valores intermedios indican una concentración moderada;
+- valores cercanos a uno identifican las zonas con la mayor concentración suavizada de superficie afectada.
+
+::: {style="text-align: justify"}
+Un valor de 0.80 no significa que la zona concentre el 80 % de las hectáreas quemadas. Significa que su intensidad estimada se encuentra aproximadamente en el 80 % del intervalo entre el mínimo y el máximo observados en el mapa.
+:::
+
+::: {.callout-important}
+La superficie relativa no representa directamente hectáreas afectadas ni una probabilidad de incendio. Es una medida normalizada para comparar espacialmente las zonas del estado.
+:::
+
+::: {style="text-align: justify"}
+La representación kernel se utiliza como herramienta exploratoria y de comunicación visual. La selección de las brigadas no se realiza directamente sobre las zonas más rojas del mapa.
+
+Para la optimización se construye un índice por celda que distingue explícitamente entre frecuencia, superficie y persistencia temporal.
+:
+
+---
+
+## Discretización espacial mediante celdas hexagonales
+
+::: {style="text-align: justify"}
+Para transformar los eventos puntuales en unidades espaciales de demanda se genera una cuadrícula hexagonal sobre el territorio de Chiapas.
+
+En la implementación inicial se utiliza una resolución nominal aproximada de 10 kilómetros.
+
+La utilización de hexágonos presenta ventajas para el análisis espacial debido a que cada celda regular posee seis vecinos principales. Además, la distancia entre el centro de una celda y los centros de sus vecinas es relativamente homogénea.
+
+En comparación con una cuadrícula cuadrada, los hexágonos reducen parcialmente las diferencias entre conexiones laterales y diagonales.
+:::
+
+El tamaño de la celda determina el nivel de detalle del análisis:
+
+- celdas pequeñas proporcionan mayor resolución espacial;
+- celdas grandes producen patrones más generales;
+- celdas demasiado pequeñas pueden generar muchas unidades sin incendios;
+- celdas demasiado grandes pueden mezclar zonas con características diferentes.
+
+La cuadrícula inicial se intersecta con el límite oficial de Chiapas para conservar solamente las porciones ubicadas dentro del estado.
+
+A cada celda se le asigna un identificador único:
+
+$$
+i=1,\ldots,n,
+$$
+
+donde $n$ representa el número total de celdas espaciales.
+
+Cada incendio se asigna a la celda que contiene sus coordenadas. Cuando un incendio se localiza exactamente sobre el límite entre dos polígonos, se deben emplear identificadores únicos para evitar que el mismo evento sea contabilizado más de una vez.
+
+---
+
+## Variables de riesgo por celda
+
+Para cada celda $i$ se calculan las siguientes medidas.
+
+### Frecuencia de incendios
+
+La frecuencia corresponde al número total de eventos registrados dentro de la celda:
+
+$$
+N_i
+=
+\text{número de incendios registrados en la celda }i.
+$$
+
+Esta variable representa la recurrencia acumulada durante el periodo de estudio.
+
+### Superficie acumulada
+
+La superficie acumulada se define como:
+
+$$
+A_i
+=
+\sum_{k\in i} A_k,
+$$
+
+donde $A_k$ es la superficie, expresada en hectáreas, del incendio $k$ localizado dentro de la celda $i$.
+
+Esta medida representa la magnitud total de la afectación registrada en el periodo.
+
+### Superficie promedio
+
+La superficie media por incendio dentro de la celda se calcula como:
+
+$$
+\overline{A}_i
+=
+\frac{1}{N_i}
+\sum_{k\in i} A_k.
+$$
+
+Esta variable permite diferenciar celdas con muchos incendios pequeños de aquellas con pocos eventos de gran magnitud.
+
+### Superficie máxima
+
+La mayor superficie registrada en una celda se expresa como:
+
+$$
+A_i^{\max}
+=
+\max_{k\in i} A_k.
+$$
+
+Aunque esta variable se calcula con fines descriptivos, no se incorpora directamente en el índice inicial debido a que puede estar fuertemente influenciada por un evento extremo.
+
+### Número de años con incendios
+
+Sea $N_{it}$ el número de incendios registrados en la celda $i$ durante el año $t$. El número de años con al menos un evento se define como:
+
+$$
+Y_i
+=
+\sum_{t=1}^{T}
+\mathbb{I}(N_{it}>0),
+$$
+
+donde $T$ es el número total de años estudiados y $\mathbb{I}(\cdot)$ es una función indicadora.
+
+### Persistencia temporal
+
+La persistencia se obtiene mediante:
+
+$$
+P_i
+=
+\frac{Y_i}{T}.
+$$ {#eq-persistencia}
+
+La persistencia toma valores entre cero y uno:
+
+- $P_i=0$: no se observaron incendios;
+- $P_i=0.20$: hubo incendios en uno de cinco años;
+- $P_i=1$: hubo al menos un incendio en todos los años estudiados.
+
+Esta medida permite diferenciar dos situaciones que pueden producir la misma frecuencia acumulada.
+
+Una celda con diez incendios concentrados en un solo año no presenta la misma estructura temporal que una celda con diez incendios distribuidos en todo el periodo.
+
+La segunda evidencia una recurrencia temporal más persistente.
+
+---
+
+## Transformación de las variables
+
+::: {style="text-align: justify"}
+La frecuencia y la superficie acumulada suelen presentar distribuciones asimétricas. Un número reducido de celdas puede concentrar una gran cantidad de incendios o incluir eventos de superficie extraordinariamente elevada.
+
+Si las variables se incorporaran directamente al índice, dichas observaciones podrían dominar completamente los resultados.
+
+Para disminuir esta influencia se aplican transformaciones logarítmicas:
+:::
+
+$$
+F_i
+=
+\log(1+N_i).
+$$ {#eq-frecuencia-log}
+
+$$
+S_i
+=
+\log(1+A_i).
+$$ {#eq-superficie-log}
+
+La adición de uno permite aplicar la transformación a valores iguales a cero.
+
+La transformación logarítmica conserva el orden de las observaciones, pero reduce la diferencia relativa entre valores moderados y extremos.
+
+Posteriormente, cada variable se normaliza mediante el método mínimo-máximo:
+
+$$
+\widetilde{Z}_i
+=
+\frac{
+Z_i-\min(Z)
+}{
+\max(Z)-\min(Z)
+}.
+$$ {#eq-normalizacion}
+
+La transformación produce valores dentro del intervalo $[0,1]$.
+
+Cuando todos los valores de una variable son iguales, el denominador de @eq-normalizacion es cero. En ese caso, la variable no contiene información para diferenciar las celdas y se asigna un valor normalizado de cero.
+
+---
+
+## Construcción del índice compuesto de riesgo
+
+El riesgo relativo de la celda $i$ se define como una combinación lineal de la frecuencia, la superficie y la persistencia:
+
+$$
+R_i
+=
+w_F\widetilde{F}_i
++
+w_S\widetilde{S}_i
++
+w_P\widetilde{P}_i.
+$$ {#eq-indice-riesgo}
+
+Los pesos deben cumplir:
+
+$$
+w_F+w_S+w_P=1,
+\qquad
+w_F,w_S,w_P\geq 0.
+$$
+
+En la implementación inicial se utilizan los siguientes valores:
+
+| Componente | Símbolo | Peso |
+|---|:---:|---:|
+| Frecuencia de incendios | $w_F$ | 0.50 |
+| Superficie acumulada | $w_S$ | 0.35 |
+| Persistencia temporal | $w_P$ | 0.15 |
+
+: Ponderaciones utilizadas en el índice compuesto de riesgo. {#tbl-pesos-riesgo}
+
+::: {style="text-align: justify"}
+La frecuencia recibe la mayor ponderación porque la localización de una brigada debe priorizar zonas donde los incendios ocurren repetidamente.
+
+La superficie acumulada recibe el segundo peso más alto debido a que representa la magnitud de los daños registrados.
+
+La persistencia se incorpora como un componente adicional para favorecer zonas donde los eventos se han presentado durante varios años.
+
+Los pesos utilizados constituyen una decisión metodológica inicial y no deben interpretarse como valores universales.
+
+Una aplicación institucional debería determinar las ponderaciones mediante:
+:::
+
+- consulta con especialistas en incendios forestales;
+- opinión de brigadistas;
+- participación de autoridades ambientales;
+- análisis multicriterio;
+- evaluación de sensibilidad;
+- comparación de escenarios alternativos.
+
+::: {style="text-align: justify"}
+El índice $R_i$ representa una medida relativa. Un valor alto indica una combinación elevada de frecuencia, superficie y persistencia en comparación con las demás celdas.
+
+No representa directamente una probabilidad estadística de incendio.
+
+Las celdas con $R_i=0$ se excluyen de la demanda inicial. Esto reduce el tamaño del problema de optimización, pero implica que las zonas sin incendios históricos no influyen en la selección de brigadas.
+
+Por esta razón, en una etapa posterior convendría incorporar variables ambientales y climáticas que permitan estimar riesgo incluso en zonas donde todavía no se han observado incendios.
+:::
+
+---
+
+## Generación de sitios candidatos
+
+El conjunto de sitios candidatos se representa como:
+
+$$
+J=\{1,\ldots,m\},
+$$
+
+donde cada elemento $j\in J$ corresponde inicialmente a un municipio de Chiapas.
+
+Para obtener una coordenada representativa de cada municipio se utiliza un punto localizado dentro de su polígono.
+
+La operación `st_point_on_surface()` garantiza que el punto permanezca dentro de la geometría municipal, incluso cuando el polígono presenta una forma irregular.
+
+Es importante señalar que este punto no necesariamente corresponde a:
+
+- la cabecera municipal;
+- una estación de bomberos;
+- una oficina de Protección Civil;
+- una instalación de CONAFOR;
+- una localidad con acceso carretero;
+- una base real de brigadas.
+
+Por tanto, el resultado debe interpretarse como la selección de municipios o zonas prioritarias, no como la coordenada definitiva para construir una instalación.
+
+En una aplicación operativa, los candidatos deberían sustituirse por sitios reales y factibles, como:
+
+- instalaciones existentes de Protección Civil;
+- campamentos forestales;
+- cabeceras municipales;
+- localidades con acceso vial;
+- estaciones de bomberos;
+- zonas próximas a fuentes de agua;
+- terrenos con espacio para vehículos y equipo;
+- instalaciones con comunicación y abastecimiento.
+
+---
+
+## Cálculo preliminar de los tiempos de respuesta
+
+En la implementación inicial, la distancia entre el sitio candidato $j$ y la celda de demanda $i$ se calcula mediante una distancia espacial directa.
+
+Sea:
+
+$$
+d_{ji}
+=
+\text{distancia entre el candidato }j
+\text{ y la celda }i,
+$$
+
+expresada en kilómetros.
+
+La distancia lineal suele ser menor que la distancia recorrida por carreteras y caminos. Para aproximar esta diferencia se incorpora un factor de sinuosidad $\kappa$.
+
+El tiempo estimado se obtiene mediante:
+
+$$
+t_{ji}
+=
+60
+\left(
+\frac{
+\kappa d_{ji}
+}{
+v
+}
+\right),
+$$ {#eq-tiempo-estimado}
+
+donde:
+
+- $t_{ji}$ es el tiempo estimado en minutos;
+- $d_{ji}$ es la distancia en kilómetros;
+- $\kappa$ es el factor de sinuosidad;
+- $v$ es la velocidad promedio en kilómetros por hora;
+- el factor 60 convierte horas a minutos.
+
+En la configuración inicial se utiliza:
+
+$$
+\kappa=1.35,
+\qquad
+v=45\ \text{km/h}.
+$$
+
+Por ejemplo, para una distancia directa de 30 kilómetros:
+
+$$
+t_{ji}
+=
+60
+\left(
+\frac{1.35(30)}{45}
+\right)
+=
+54\ \text{minutos}.
+$$
+
+Esta aproximación supone una velocidad constante y no incorpora:
+
+- tipo de carretera;
+- pendiente;
+- estado del camino;
+- congestión;
+- temporada de lluvias;
+- cierres viales;
+- accesos forestales;
+- obstáculos naturales;
+- tiempos de preparación de la brigada.
+
+Por esta razón, los tiempos calculados deben considerarse preliminares.
+
+Una etapa posterior deberá sustituir esta aproximación por una matriz de tiempos obtenida mediante una red vial real.
+
+---
+
+## Definición de cobertura
+
+Se establece un tiempo máximo de respuesta $T_{\max}$.
+
+Una celda se considera cubierta por un sitio candidato cuando el tiempo estimado es menor o igual que ese límite.
+
+Se define el parámetro binario:
+
+$$
+a_{ji}
+=
+\begin{cases}
+1, & \text{si } t_{ji}\leq T_{\max},\\
+0, & \text{si } t_{ji}>T_{\max}.
+\end{cases}
+$$ {#eq-cobertura-binaria}
+
+En la implementación inicial se utiliza:
+
+$$
+T_{\max}=60\ \text{minutos}.
+$$
+
+La matriz:
+
+$$
+\mathbf{A}=[a_{ji}]
+$$
+
+resume la relación de cobertura entre todos los sitios candidatos y todas las celdas de demanda.
+
+El umbral de 60 minutos constituye un escenario de evaluación, no un estándar operativo definitivo.
+
+Su definición debería considerar:
+
+- protocolos institucionales;
+- velocidad real de los vehículos;
+- condiciones topográficas;
+- características de los caminos;
+- tiempo requerido para preparar el equipo;
+- experiencia del personal operativo.
+
+---
+
+## Modelo de máxima cobertura ponderada
+
+Para formular el problema se definen dos grupos de variables binarias.
+
+La variable de localización es:
+
+$$
+x_j
+=
+\begin{cases}
+1, & \text{si se instala una brigada en el sitio }j,\\
+0, & \text{en otro caso}.
+\end{cases}
+$$
+
+La variable de cobertura es:
+
+$$
+y_i
+=
+\begin{cases}
+1, & \text{si la celda }i\text{ queda cubierta},\\
+0, & \text{en otro caso}.
+\end{cases}
+$$
+
+Sea $p$ el número total de brigadas disponibles.
+
+El problema de máxima cobertura ponderada se formula como:
+
+$$
+\max
+\quad
+Z
+=
+\sum_{i=1}^{n}
+R_i y_i.
+$$ {#eq-objetivo-cobertura}
+
+Sujeto a:
+
+$$
+y_i
+\leq
+\sum_{j=1}^{m}
+a_{ji}x_j,
+\qquad
+i=1,\ldots,n.
+$$ {#eq-restriccion-cobertura}
+
+$$
+\sum_{j=1}^{m}
+x_j
+=
+p.
+$$ {#eq-numero-brigadas}
+
+$$
+x_j\in\{0,1\},
+\qquad
+j=1,\ldots,m.
+$$
+
+$$
+y_i\in\{0,1\},
+\qquad
+i=1,\ldots,n.
+$$
+
+::: {style="text-align: justify"}
+La función objetivo de @eq-objetivo-cobertura maximiza la suma del riesgo correspondiente a las celdas cubiertas.
+
+Por esta razón, cubrir una celda con riesgo elevado aporta más a la función objetivo que cubrir una celda con riesgo bajo.
+
+La restricción @eq-restriccion-cobertura establece que una celda solamente puede considerarse cubierta cuando al menos uno de los sitios seleccionados puede alcanzarla dentro del tiempo máximo.
+
+La restricción @eq-numero-brigadas obliga al modelo a seleccionar exactamente $p$ ubicaciones.
+:::
+
+En la ejecución inicial se considera:
+
+$$
+p=6.
+$$
+
+El problema corresponde a un modelo de programación lineal entera binaria. Su solución se obtiene mediante las librerías `ompr`, `ROI` y `ROI.plugin.glpk`.
+
+---
+
+## Asignación posterior de las celdas
+
+El modelo de máxima cobertura determina qué sitios deben seleccionarse, pero no asigna necesariamente cada celda a una sola brigada.
+
+Para facilitar la interpretación operativa, cada celda se asigna posteriormente al sitio seleccionado con el menor tiempo estimado.
+
+Sea $J^*$ el conjunto de ubicaciones seleccionadas. La brigada asignada a la celda $i$ se obtiene mediante:
+
+$$
+j^*(i)
+=
+\arg\min_{j\in J^*}
+t_{ji}.
+$$ {#eq-asignacion}
+
+El tiempo mínimo de respuesta se define como:
+
+$$
+t_i^*
+=
+\min_{j\in J^*}
+t_{ji}.
+$$ {#eq-tiempo-minimo}
+
+Una celda se clasifica como cubierta cuando:
+
+$$
+t_i^*\leq T_{\max}.
+$$
+
+Esta asignación permite construir áreas aproximadas de servicio y calcular indicadores de desempeño.
+
+Sin embargo, no considera:
+
+- capacidad máxima de cada brigada;
+- número de vehículos;
+- incendios simultáneos;
+- indisponibilidad temporal;
+- necesidad de enviar varias brigadas;
+- diferencias en equipamiento.
+
+---
+
+## Indicadores de evaluación
+
+### Porcentaje de riesgo cubierto
+
+El porcentaje de riesgo cubierto se calcula como:
+
+$$
+C_R
+=
+100
+\frac{
+\sum_{i=1}^{n}
+R_i
+\mathbb{I}(t_i^*\leq T_{\max})
+}{
+\sum_{i=1}^{n} R_i
+}.
+$$ {#eq-riesgo-cubierto}
+
+Este indicador representa la proporción del riesgo total que puede atenderse dentro del tiempo objetivo.
+
+### Porcentaje de celdas cubiertas
+
+El porcentaje de unidades espaciales cubiertas se obtiene mediante:
+
+$$
+C_N
+=
+100
+\frac{
+\sum_{i=1}^{n}
+\mathbb{I}(t_i^*\leq T_{\max})
+}{
+n
+}.
+$$ {#eq-celdas-cubiertas}
+
+A diferencia del riesgo cubierto, este indicador asigna la misma importancia a todas las celdas.
+
+### Tiempo promedio de respuesta
+
+$$
+\overline{t}
+=
+\frac{1}{n}
+\sum_{i=1}^{n}
+t_i^*.
+$$ {#eq-tiempo-promedio}
+
+### Tiempo promedio ponderado por riesgo
+
+$$
+\overline{t}_R
+=
+\frac{
+\sum_{i=1}^{n}
+R_i t_i^*
+}{
+\sum_{i=1}^{n} R_i
+}.
+$$ {#eq-tiempo-ponderado}
+
+El tiempo ponderado concede mayor importancia a las celdas con riesgo elevado.
+
+### Tiempo máximo estimado
+
+$$
+t_{\max}^*
+=
+\max_i t_i^*.
+$$ {#eq-tiempo-maximo}
+
+Este indicador permite evaluar el peor tiempo de atención de la solución.
+
+Una configuración puede presentar un buen tiempo promedio, pero mantener ciertas celdas excesivamente alejadas de todas las brigadas.
+
+---
+
+## Relación con el problema de la p-mediana
+
+El modelo de máxima cobertura prioriza la cantidad de riesgo atendida dentro de un umbral temporal. Sin embargo, no minimiza directamente el tiempo promedio.
+
+Dos soluciones pueden cubrir una proporción semejante de riesgo, pero presentar tiempos medios diferentes.
+
+Como extensión puede aplicarse el problema de la $p$-mediana, cuyos antecedentes se encuentran en @hakimi1964optimum.
+
+Una formulación básica consiste en minimizar:
+
+$$
+\min
+\quad
+\sum_{i=1}^{n}
+\sum_{j=1}^{m}
+R_i t_{ji}z_{ji},
+$$ {#eq-p-mediana}
+
+donde $z_{ji}=1$ cuando la celda $i$ es asignada al sitio $j$.
+
+Ambos criterios pueden combinarse mediante un procedimiento jerárquico:
+
+1. maximizar el riesgo cubierto;
+2. conservar las soluciones con cobertura elevada;
+3. minimizar el tiempo promedio ponderado entre las soluciones seleccionadas.
+
+El modelo de máxima cobertura responde a la pregunta:
+
+> ¿Cuánto riesgo puede atenderse dentro de un tiempo máximo?
+
+El modelo de $p$-mediana responde a la pregunta:
+
+> ¿Cómo puede reducirse el tiempo promedio de desplazamiento?
+
+Ambos enfoques son complementarios [@church1976links].
+
+---
+
+## Procedimiento computacional
+
+El procedimiento implementado en R se resume en las siguientes etapas.
+
+### Etapa 1. Integración de archivos
+
+Se identifican los archivos anuales, se extrae el año del nombre de cada archivo y se combinan todas las observaciones en una sola tabla.
+
+### Etapa 2. Depuración
+
+Se convierten las variables espaciales y la superficie a formato numérico. Se eliminan registros incompletos o inválidos.
+
+### Etapa 3. Construcción de objetos espaciales
+
+Los incendios se convierten en geometrías puntuales y los límites territoriales se representan mediante polígonos.
+
+### Etapa 4. Transformación cartográfica
+
+Todas las capas se reproyectan al sistema EPSG:6372 para trabajar con unidades métricas.
+
+### Etapa 5. Validación geométrica
+
+Las geometrías inválidas se reparan y las colecciones geométricas se convierten a tipos homogéneos.
+
+### Etapa 6. Generación de la cuadrícula
+
+Se construye una cuadrícula hexagonal con una resolución nominal de 10 kilómetros y se recorta con el límite de Chiapas.
+
+### Etapa 7. Asignación espacial
+
+Cada incendio se asocia con la celda que contiene sus coordenadas.
+
+### Etapa 8. Agregación de información
+
+Por celda se calculan:
+
+- frecuencia;
+- superficie acumulada;
+- superficie promedio;
+- superficie máxima;
+- años con incendios;
+- persistencia.
+
+### Etapa 9. Transformación y normalización
+
+La frecuencia y la superficie se transforman mediante $\log(1+x)$. Posteriormente, todas las variables se normalizan entre cero y uno.
+
+### Etapa 10. Cálculo del riesgo
+
+El índice $R_i$ se obtiene mediante la combinación ponderada de frecuencia, superficie y persistencia.
+
+### Etapa 11. Generación de candidatos
+
+Se obtiene un punto representativo dentro de cada municipio.
+
+### Etapa 12. Cálculo de distancias
+
+Se construye una matriz de distancias entre todos los sitios candidatos y todas las celdas de demanda.
+
+### Etapa 13. Aproximación del tiempo
+
+Las distancias se convierten a minutos usando una velocidad promedio de 45 km/h y un factor de sinuosidad de 1.35.
+
+### Etapa 14. Construcción de la cobertura
+
+Cada combinación candidato–celda se clasifica según si el tiempo es menor o igual a 60 minutos.
+
+### Etapa 15. Optimización
+
+Se resuelve el modelo de máxima cobertura seleccionando seis ubicaciones.
+
+### Etapa 16. Asignación de áreas de servicio
+
+Cada celda se asigna a la brigada seleccionada con menor tiempo estimado.
+
+### Etapa 17. Evaluación
+
+Se calculan:
+
+- porcentaje de riesgo cubierto;
+- porcentaje de celdas cubiertas;
+- tiempo promedio;
+- tiempo promedio ponderado;
+- tiempo máximo.
+
+### Etapa 18. Representación cartográfica
+
+Las ubicaciones seleccionadas se superponen sobre el mapa de riesgo para facilitar su interpretación.
+
+---
+
+## Análisis de sensibilidad
+
+Los resultados dependen de decisiones metodológicas como el número de brigadas, el tamaño de las celdas y el tiempo máximo de respuesta.
+
+Por esta razón, se debe realizar un análisis de sensibilidad.
+
+Como mínimo, conviene evaluar:
+
+$$
+p\in\{4,6,8,10\},
+$$
+
+$$
+T_{\max}\in\{30,45,60,90\}\ \text{minutos},
+$$
+
+$$
+\text{tamaño de celda}\in\{5,10,15\}\ \text{km},
+$$
+
+$$
+v\in\{30,45,60\}\ \text{km/h},
+$$
+
+$$
+\kappa\in\{1.20,1.35,1.50\}.
+$$
+
+También deben compararse diferentes ponderaciones del índice de riesgo.
+
+La estabilidad de una ubicación puede medirse mediante:
+
+$$
+E_j
+=
+\frac{1}{B}
+\sum_{b=1}^{B}
+x_j^{(b)},
+$$ {#eq-estabilidad}
+
+donde:
+
+- $B$ es el número de escenarios;
+- $x_j^{(b)}=1$ cuando el sitio $j$ fue seleccionado en el escenario $b$.
+
+Los sitios con valores de $E_j$ cercanos a uno pueden considerarse ubicaciones robustas.
+
+Los sitios seleccionados únicamente bajo combinaciones muy específicas de parámetros deben interpretarse con mayor precaución.
+
+---
+
+## Validación temporal
+
+Para evaluar si las ubicaciones responden a patrones persistentes y no exclusivamente a los datos utilizados para seleccionarlas, se propone una validación de tipo dejar-un-año-fuera.
+
+Para cada año $t$:
+
+1. se excluyen los incendios del año $t$;
+2. se construye el índice con los años restantes;
+3. se resuelve nuevamente el modelo;
+4. se evalúa la cobertura de los incendios del año excluido.
+
+Sea $\mathcal{D}_{-t}$ el conjunto utilizado para ajustar el modelo y $\mathcal{D}_t$ el conjunto de validación.
+
+El porcentaje de superficie del año excluido que habría sido atendido dentro del tiempo objetivo se define como:
+
+$$
+C_{A,t}
+=
+100
+\frac{
+\sum_{k\in\mathcal{D}_t}
+A_k
+\mathbb{I}(t_k^*\leq T_{\max})
+}{
+\sum_{k\in\mathcal{D}_t} A_k
+}.
+$$ {#eq-validacion-superficie}
+
+La validación debe repetirse para todos los años disponibles.
+
+Una solución será más confiable cuando mantenga niveles elevados de cobertura en datos que no fueron utilizados para seleccionar las ubicaciones.
+
+---
+
+## Supuestos del modelo
+
+La interpretación de los resultados se basa en los siguientes supuestos:
+
+1. Los registros disponibles representan adecuadamente la distribución espacial de los incendios.
+2. La superficie reportada es comparable entre años.
+3. Los patrones observados entre 2022 y 2026 contienen información útil para la planeación futura.
+4. Todas las brigadas poseen la misma capacidad.
+5. Las brigadas están disponibles en todo momento.
+6. No se modelan incendios simultáneos.
+7. El tiempo de respuesta depende principalmente de la distancia.
+8. Los puntos municipales representan sitios candidatos.
+9. El índice lineal resume adecuadamente las dimensiones del riesgo.
+10. El tiempo máximo de cobertura es igual para todo el estado.
+
+Estos supuestos simplifican el problema y permiten obtener una primera solución cuantitativa. Sin embargo, deben revisarse antes de formular recomendaciones operativas.
+
+---
+
+## Limitaciones
+
+La principal limitación es que los tiempos de respuesta se aproximan mediante distancias lineales corregidas.
+
+La topografía de Chiapas, la distribución irregular de la red vial y la presencia de caminos de acceso restringido pueden producir diferencias importantes entre el tiempo estimado y el tiempo real.
+
+Otra limitación es el uso de puntos representativos municipales. El resultado identifica municipios estratégicos, pero no garantiza que la coordenada seleccionada tenga:
+
+- infraestructura;
+- acceso vial;
+- disponibilidad de agua;
+- servicios;
+- espacio para vehículos;
+- condiciones legales o administrativas apropiadas.
+
+El índice se basa principalmente en incendios históricos y no incorpora variables predictivas como:
+
+- precipitación;
+- temperatura;
+- duración de la sequía;
+- velocidad del viento;
+- pendiente;
+- orientación del terreno;
+- biomasa;
+- material combustible;
+- cobertura vegetal;
+- uso del suelo;
+- proximidad a localidades;
+- disponibilidad de agua;
+- valor ecológico;
+- áreas naturales protegidas.
+
+Tampoco se modelan directamente:
+
+- severidad ecológica;
+- costo económico;
+- población expuesta;
+- capacidad de recuperación de los ecosistemas;
+- simultaneidad de incendios;
+- capacidad diferenciada de las brigadas;
+- indisponibilidad temporal.
+
+---
+
+## Alcance de los resultados
+
+Las ubicaciones seleccionadas deben interpretarse como una **propuesta preliminar de priorización espacial**.
+
+El modelo identifica municipios o zonas desde las cuales podría cubrirse una proporción elevada del riesgo histórico, de acuerdo con los parámetros establecidos.
+
+No debe interpretarse como una recomendación automática para construir instalaciones en las coordenadas obtenidas.
+
+La decisión final requiere:
+
+- revisión de rutas de acceso;
+- inspección física;
+- evaluación de infraestructura;
+- consulta con brigadistas;
+- consulta con autoridades locales;
+- análisis de costos;
+- consideración de bases existentes;
+- revisión de restricciones ambientales;
+- evaluación de restricciones legales.
+
+El principal aporte del modelo es proporcionar un procedimiento cuantitativo, reproducible y transparente.
+
+A diferencia de una selección basada exclusivamente en la observación visual, el modelo permite identificar explícitamente:
+
+- criterios;
+- ponderaciones;
+- restricciones;
+- parámetros;
+- supuestos;
+- indicadores de desempeño.
+
+---
+
+## Extensiones metodológicas
+
+La metodología puede ampliarse mediante:
+
+1. sustitución de las distancias lineales por tiempos sobre la red vial;
+2. incorporación de sitios candidatos reales;
+3. inclusión de capacidades distintas entre brigadas;
+4. modelación de incendios simultáneos;
+5. cobertura redundante en zonas críticas;
+6. incorporación de costos de instalación;
+7. incorporación de costos de operación;
+8. utilización de pronósticos meteorológicos;
+9. estimación estadística de la probabilidad de incendio;
+10. incorporación de criterios de equidad territorial;
+11. formulación de modelos multiobjetivo.
+
+Una extensión relevante consiste en exigir que las celdas de riesgo muy alto queden cubiertas por al menos dos brigadas.
+
+Esta cobertura redundante permitiría mantener capacidad de respuesta cuando una unidad se encuentre ocupada atendiendo otro evento.
+
+---
+
+## Síntesis metodológica
+
+La metodología transforma los registros de incendios en un problema formal de decisión espacial.
+
+El flujo general es:
+
+$$
+\begin{aligned}
+\text{Incendios históricos}
+&\longrightarrow
+\text{depuración y georreferenciación}
+\\
+&\longrightarrow
+\text{agregación hexagonal}
+\\
+&\longrightarrow
+\text{índice de riesgo}
+\\
+&\longrightarrow
+\text{sitios candidatos}
+\\
+&\longrightarrow
+\text{matriz de tiempos}
+\\
+&\longrightarrow
+\text{modelo de máxima cobertura}
+\\
+&\longrightarrow
+\text{ubicaciones estratégicas}.
+\end{aligned}
+$$
+
+La solución busca equilibrar:
+
+- recurrencia de los incendios;
+- magnitud de la superficie afectada;
+- persistencia temporal;
+- disponibilidad limitada de brigadas;
+- posibilidad de alcanzar las zonas prioritarias dentro de un tiempo máximo.
+
+La formulación proporciona una base objetiva para identificar ubicaciones potenciales, comparar escenarios de disponibilidad de recursos y evaluar cuantitativamente la cobertura territorial.
+
+Sin embargo, la calidad de las ubicaciones depende directamente de:
+
+- la calidad de los datos;
+- la definición del índice;
+- las ponderaciones;
+- el tamaño de la cuadrícula;
+- el número de brigadas;
+- el tiempo máximo;
+- la representación de los desplazamientos.
+
+Por ello, los resultados deben considerarse una primera etapa dentro de un proceso más amplio de planeación, validación territorial y toma de decisiones institucional.
+
+```{r,echo=FALSE}
+
+library(tidyverse)
+library(sf)
+library(geodata)
+library(ggplot2)
+library(plotly)
+library(RColorBrewer)
+library(spatstat.geom)
+library(spatstat.explore)
+library(scales)
+
+# ------------------------------------------------------------------------------
+# 1. Leer y combinar archivos CSV
+# ------------------------------------------------------------------------------
+
+files <- list.files(pattern = "Incendios.*\\.csv$", full.names = TRUE)
+
+if (length(files) == 0) {
+  stop("No se encontraron archivos 'Incendios*.csv' en el directorio actual.")
+}
+
+df_list <- lapply(files, function(f) {
+  df <- read.csv(f, stringsAsFactors = FALSE)
+  year <- as.numeric(gsub(".*Incendios\\s*(\\d{4})\\.csv", "\\1", f))
+  df$year <- year
+  df
+})
+
+fires_all <- bind_rows(df_list)
+
+# ------------------------------------------------------------------------------
+# 2. Limpiar datos
+# ------------------------------------------------------------------------------
+
+fires_all <- fires_all %>%
+  mutate(
+    Lat = as.numeric(Latitud),
+    Lon = as.numeric(Longitud),
+    Superficie = as.numeric(Superficie)
+  ) %>%
+  filter(
+    !is.na(Lat) & !is.na(Lon),
+    !is.na(Superficie) & Superficie > 0,
+    Lat >= 14.5 & Lat <= 17.5,
+    Lon >= -94.5 & Lon <= -90.5
+  )
+
+if (nrow(fires_all) == 0) stop("No hay datos válidos.")
+
+# ------------------------------------------------------------------------------
+# 3. Polígonos de Chiapas (estado y municipios) para contexto
+# ------------------------------------------------------------------------------
+
+mexico_states <- gadm(country = "MEX", level = 1, path = tempdir())
+chiapas <- mexico_states[mexico_states$NAME_1 == "Chiapas", ]
+chiapas <- st_as_sf(chiapas) %>% st_transform(crs = 4326)
+
+mexico_municipios <- gadm(country = "MEX", level = 2, path = tempdir())
+municipios_chiapas <- mexico_municipios[mexico_municipios$NAME_1 == "Chiapas", ]
+municipios_chiapas <- st_as_sf(municipios_chiapas) %>%
+  st_cast("MULTIPOLYGON") %>%
+  st_transform(crs = 4326)
+
+bbox_chiapas <- st_bbox(chiapas)
+
+
+# ------------------------------------------------------------------------------
+# 4. Crear texto para tooltip de puntos
+# ------------------------------------------------------------------------------
+
+fires_all <- fires_all %>%
+  mutate(
+    year = factor(year),
+    tooltip_text = paste0(
+      "<b>Superficie:</b> ", round(Superficie, 1), " ha<br>",
+      "<b>Municipio:</b> ", Municipio, "<br>",
+      "<b>Año:</b> ", year, "<br>",
+      "<b>Causa:</b> ", `Posible.causa`, "<br>",
+      "<b>Vegetación:</b> ", `Tipo.vegetación`
+    )
+  )
+
+# ------------------------------------------------------------------------------
+# 5. Crear superficie suavizada (kernel density) ponderada por Superficie
+# ------------------------------------------------------------------------------
+
+xmin <- as.numeric(bbox_chiapas["xmin"])
+xmax <- as.numeric(bbox_chiapas["xmax"])
+ymin <- as.numeric(bbox_chiapas["ymin"])
+ymax <- as.numeric(bbox_chiapas["ymax"])
+
+# Ventana espacial
+ventana <- spatstat.geom::owin(
+  xrange = c(xmin, xmax),
+  yrange = c(ymin, ymax)
+)
+
+# Crear patrón de puntos
+pp <- spatstat.geom::ppp(
+  x = fires_all$Lon,
+  y = fires_all$Lat,
+  window = ventana
+)
+
+# Densidad suavizada usando Superficie como peso
+# sigma controla qué tan "smooth" se ve:
+#   sigma pequeño = más detalle
+#   sigma grande   = más suave
+dens <- spatstat.explore::density.ppp(
+  pp,
+  weights = fires_all$Superficie,
+  sigma = 0.10,      # prueba 0.08, 0.10, 0.12 o 0.15
+  eps = 0.01,        # resolución de la malla
+  at = "pixels"
+)
+
+# Convertir a data frame
+dens_df <- as.data.frame(dens)
+names(dens_df) <- c("x", "y", "intensidad")
+
+# Convertir a sf para recortar al polígono de Chiapas
+dens_sf <- st_as_sf(
+  dens_df,
+  coords = c("x", "y"),
+  crs = 4326,
+  remove = FALSE
+)
+
+# Mantener solo pixeles dentro de Chiapas
+dentro <- lengths(st_within(dens_sf, chiapas)) > 0
+dens_df <- dens_df[dentro, ]
+
+# Reescalar a [0,1] para que la escala sea blanco -> rojo
+dens_df <- dens_df %>%
+  mutate(
+    intensidad_rel = scales::rescale(intensidad, to = c(0, 1))
+  )
+
+
+```
+
+
+
+
+```{r}
+# ------------------------------------------------------------------------------
+# Paquetes para localización óptima de brigadas
+# ------------------------------------------------------------------------------
+
+library(tidyverse)
+library(sf)
+library(units)
+library(ompr)
+library(ompr.roi)
+library(ROI)
+library(ROI.plugin.glpk)
+library(plotly)
+library(scales)
+
+# ------------------------------------------------------------------------------
+# Parámetros generales
+# ------------------------------------------------------------------------------
+
+# Sistema de coordenadas métrico para México
+crs_metrico <- 6372
+
+# Tamaño aproximado de las celdas hexagonales
+tamano_celda_m <- 10000   # 10 km
+
+# Número de brigadas que se desea ubicar
+numero_brigadas <- 6
+
+# Tiempo máximo para considerar una zona cubierta
+tiempo_maximo_min <- 60
+
+# Aproximación inicial del desplazamiento
+velocidad_promedio_kmh <- 45
+
+# Corrige la diferencia entre distancia recta y recorrido real
+factor_sinuosidad <- 1.35
+
+# Pesos del índice de riesgo
+peso_frecuencia  <- 0.50
+peso_superficie  <- 0.35
+peso_persistencia <- 0.15
+
+
+# ------------------------------------------------------------------------------
+# Preparar datos
+# ------------------------------------------------------------------------------
+
+fires_modelo <- fires_all %>%
+  mutate(
+    incendio_id = row_number(),
+    Lat = as.numeric(Lat),
+    Lon = as.numeric(Lon),
+    Superficie = as.numeric(Superficie),
+    year = as.character(year)
+  ) %>%
+  filter(
+    !is.na(Lat),
+    !is.na(Lon),
+    !is.na(Superficie),
+    Superficie > 0
+  )
+
+if (nrow(fires_modelo) == 0) {
+  stop("No hay incendios válidos para construir el modelo.")
+}
+
+numero_anios <- n_distinct(fires_modelo$year)
+
+# ------------------------------------------------------------------------------
+# Transformar polígonos y puntos a coordenadas métricas
+# ------------------------------------------------------------------------------
+
+chiapas_m <- chiapas %>%
+  st_make_valid() %>%
+  st_transform(crs_metrico)
+
+municipios_m <- municipios_chiapas %>%
+  st_make_valid() %>%
+  st_transform(crs_metrico)
+
+incendios_sf <- fires_modelo %>%
+  st_as_sf(
+    coords = c("Lon", "Lat"),
+    crs = 4326,
+    remove = FALSE
+  ) %>%
+  st_transform(crs_metrico)
+
+# Conservar únicamente incendios dentro del estado
+chiapas_union <- st_union(chiapas_m)
+
+incendios_sf <- incendios_sf[
+  lengths(
+    st_intersects(
+      incendios_sf,
+      chiapas_union
+    )
+  ) > 0,
+]
+
+
+# ------------------------------------------------------------------------------
+# Crear cuadrícula hexagonal
+# ------------------------------------------------------------------------------
+
+rejilla <- st_make_grid(
+  chiapas_union,
+  cellsize = tamano_celda_m,
+  square = FALSE
+) %>%
+  st_as_sf() %>%
+  mutate(
+    celda_id = row_number()
+  )
+
+# Recortar la cuadrícula al límite de Chiapas
+rejilla <- suppressWarnings(
+  st_intersection(
+    rejilla,
+    chiapas_union
+  )
+)
+
+# Eliminar geometrías vacías
+rejilla <- rejilla[
+  !st_is_empty(rejilla),
+]
+
+# Restaurar identificadores en caso de que la intersección los modifique
+rejilla <- rejilla %>%
+  mutate(
+    celda_id = row_number()
+  )
+
+# ------------------------------------------------------------------------------
+# Unión espacial entre incendios y cuadrícula
+# ------------------------------------------------------------------------------
+
+incendios_por_celda <- st_join(
+  incendios_sf,
+  rejilla["celda_id"],
+  join = st_intersects,
+  left = FALSE
+) %>%
+  arrange(incendio_id) %>%
+  distinct(
+    incendio_id,
+    .keep_all = TRUE
+  )
+
+if (nrow(incendios_por_celda) == 0) {
+  stop("No fue posible asignar los incendios a la cuadrícula.")
+}
+
+# ------------------------------------------------------------------------------
+# Resumen de riesgo por celda
+# ------------------------------------------------------------------------------
+
+resumen_celda <- incendios_por_celda %>%
+  st_drop_geometry() %>%
+  group_by(celda_id) %>%
+  summarise(
+    frecuencia = n(),
+    
+    superficie_total = sum(
+      Superficie,
+      na.rm = TRUE
+    ),
+    
+    superficie_promedio = mean(
+      Superficie,
+      na.rm = TRUE
+    ),
+    
+    superficie_maxima = max(
+      Superficie,
+      na.rm = TRUE
+    ),
+    
+    anios_con_incendio = n_distinct(year),
+    
+    persistencia = anios_con_incendio / numero_anios,
+    
+    .groups = "drop"
+  )
+
+rejilla_riesgo <- rejilla %>%
+  left_join(
+    resumen_celda,
+    by = "celda_id"
+  ) %>%
+  mutate(
+    frecuencia = replace_na(
+      frecuencia,
+      0
+    ),
+    
+    superficie_total = replace_na(
+      superficie_total,
+      0
+    ),
+    
+    superficie_promedio = replace_na(
+      superficie_promedio,
+      0
+    ),
+    
+    superficie_maxima = replace_na(
+      superficie_maxima,
+      0
+    ),
+    
+    anios_con_incendio = replace_na(
+      anios_con_incendio,
+      0
+    ),
+    
+    persistencia = replace_na(
+      persistencia,
+      0
+    )
+  )
+
+
+# ------------------------------------------------------------------------------
+# Función de normalización entre 0 y 1
+# ------------------------------------------------------------------------------
+
+normalizar <- function(x) {
+  
+  limites <- range(
+    x,
+    na.rm = TRUE
+  )
+  
+  if (
+    !all(is.finite(limites)) ||
+    diff(limites) == 0
+  ) {
+    return(
+      rep(
+        0,
+        length(x)
+      )
+    )
+  }
+  
+  (x - limites[1]) /
+    (limites[2] - limites[1])
+}
+
+
+# ------------------------------------------------------------------------------
+# Índice de riesgo
+# ------------------------------------------------------------------------------
+
+rejilla_riesgo <- rejilla_riesgo %>%
+  mutate(
+    frecuencia_transformada = log1p(
+      frecuencia
+    ),
+    
+    superficie_transformada = log1p(
+      superficie_total
+    ),
+    
+    frecuencia_norm = normalizar(
+      frecuencia_transformada
+    ),
+    
+    superficie_norm = normalizar(
+      superficie_transformada
+    ),
+    
+    persistencia_norm = normalizar(
+      persistencia
+    ),
+    
+    riesgo = (
+      peso_frecuencia *
+        frecuencia_norm
+    ) + (
+      peso_superficie *
+        superficie_norm
+    ) + (
+      peso_persistencia *
+        persistencia_norm
+    )
+  )
+
+
+# ------------------------------------------------------------------------------
+# Celdas que representan demanda de atención
+# ------------------------------------------------------------------------------
+
+demanda <- rejilla_riesgo %>%
+  filter(
+    riesgo > 0
+  ) %>%
+  arrange(
+    celda_id
+  ) %>%
+  mutate(
+    demanda_id = row_number()
+  )
+
+if (nrow(demanda) == 0) {
+  stop("No existen celdas con riesgo mayor que cero.")
+}
+
+# Punto representativo dentro de cada celda
+demanda_puntos <- demanda %>%
+  st_point_on_surface()
+
+# ------------------------------------------------------------------------------
+# Sitios candidatos: municipios de Chiapas
+# ------------------------------------------------------------------------------
+
+candidatos <- municipios_m %>%
+  mutate(
+    candidato_id = row_number(),
+    
+    municipio_candidato = case_when(
+      "NAME_2" %in% names(.) ~ as.character(NAME_2),
+      TRUE ~ paste(
+        "Municipio",
+        row_number()
+      )
+    )
+  ) %>%
+  st_point_on_surface()
+
+if (numero_brigadas > nrow(candidatos)) {
+  stop(
+    "El número de brigadas es mayor que el número de sitios candidatos."
+  )
+}
+
+# ------------------------------------------------------------------------------
+# Distancia entre candidatos y celdas de demanda
+# ------------------------------------------------------------------------------
+
+distancia_m <- st_distance(
+  candidatos,
+  demanda_puntos
+)
+
+distancia_km <- units::drop_units(
+  distancia_m
+) / 1000
+
+# ------------------------------------------------------------------------------
+# Tiempo aproximado de viaje
+# ------------------------------------------------------------------------------
+
+tiempo_min <- (
+  distancia_km *
+    factor_sinuosidad /
+    velocidad_promedio_kmh
+) * 60
+
+
+# ------------------------------------------------------------------------------
+# Cobertura dentro del tiempo máximo
+# ------------------------------------------------------------------------------
+
+matriz_cobertura <- ifelse(
+  tiempo_min <= tiempo_maximo_min,
+  1L,
+  0L
+)
+
+numero_candidatos <- nrow(candidatos)
+numero_demandas <- nrow(demanda)
+
+riesgo_demanda <- demanda$riesgo
+
+
+# ------------------------------------------------------------------------------
+# Modelo de máxima cobertura ponderada
+# ------------------------------------------------------------------------------
+
+modelo_cobertura <- MIPModel() %>%
+  
+  # x[j] = 1 cuando se instala una brigada en el sitio j
+  add_variable(
+    x[j],
+    j = 1:numero_candidatos,
+    type = "binary"
+  ) %>%
+  
+  # y[i] = 1 cuando la celda i queda cubierta
+  add_variable(
+    y[i],
+    i = 1:numero_demandas,
+    type = "binary"
+  ) %>%
+  
+  # Maximizar el riesgo cubierto
+  set_objective(
+    sum_expr(
+      riesgo_demanda[i] * y[i],
+      i = 1:numero_demandas
+    ),
+    sense = "max"
+  ) %>%
+  
+  # Una celda solo puede considerarse cubierta
+  # cuando al menos una brigada puede llegar a tiempo
+  add_constraint(
+    y[i] <= sum_expr(
+      matriz_cobertura[j, i] * x[j],
+      j = 1:numero_candidatos
+    ),
+    i = 1:numero_demandas
+  ) %>%
+  
+  # Número exacto de brigadas disponibles
+  add_constraint(
+    sum_expr(
+      x[j],
+      j = 1:numero_candidatos
+    ) == numero_brigadas
+  )
+
+# ------------------------------------------------------------------------------
+# Ejecutar optimización
+# ------------------------------------------------------------------------------
+
+resultado_modelo <- solve_model(
+  modelo_cobertura,
+  with_ROI(
+    solver = "glpk"
+  )
+)
+
+
+# ------------------------------------------------------------------------------
+# Obtener sitios elegidos
+# ------------------------------------------------------------------------------
+
+solucion_brigadas <- get_solution(
+  resultado_modelo,
+  x[j]
+) %>%
+  filter(
+    value > 0.5
+  ) %>%
+  arrange(j)
+
+brigadas_optimas <- candidatos[
+  solucion_brigadas$j,
+]
+
+brigadas_optimas <- brigadas_optimas %>%
+  mutate(
+    numero_brigada = row_number()
+  )
+
+brigadas_optimas %>%
+  st_drop_geometry() %>%
+  select(
+    numero_brigada,
+    municipio_candidato
+  )
+
+
+# ------------------------------------------------------------------------------
+# Tiempos desde las brigadas seleccionadas
+# ------------------------------------------------------------------------------
+
+tiempos_seleccionados <- tiempo_min[
+  solucion_brigadas$j,
+  ,
+  drop = FALSE
+]
+
+# Posición de la brigada más rápida para cada celda
+brigada_local_mas_cercana <- apply(
+  tiempos_seleccionados,
+  2,
+  which.min
+)
+
+# Índice original del candidato
+brigada_global_mas_cercana <- solucion_brigadas$j[
+  brigada_local_mas_cercana
+]
+
+# Tiempo mínimo de respuesta
+tiempo_respuesta_min <- apply(
+  tiempos_seleccionados,
+  2,
+  min
+)
+
+demanda_asignada <- demanda %>%
+  mutate(
+    candidato_id = candidatos$candidato_id[
+      brigada_global_mas_cercana
+    ],
+    
+    brigada_asignada = candidatos$municipio_candidato[
+      brigada_global_mas_cercana
+    ],
+    
+    tiempo_respuesta_min = tiempo_respuesta_min,
+    
+    cubierta_60_min = tiempo_respuesta_min <=
+      tiempo_maximo_min
+  )
+
+
+# ------------------------------------------------------------------------------
+# Indicadores de cobertura
+# ------------------------------------------------------------------------------
+
+riesgo_total <- sum(
+  demanda_asignada$riesgo,
+  na.rm = TRUE
+)
+
+riesgo_cubierto <- sum(
+  demanda_asignada$riesgo[
+    demanda_asignada$cubierta_60_min
+  ],
+  na.rm = TRUE
+)
+
+porcentaje_riesgo_cubierto <- (
+  riesgo_cubierto /
+    riesgo_total
+) * 100
+
+porcentaje_celdas_cubiertas <- mean(
+  demanda_asignada$cubierta_60_min
+) * 100
+
+tiempo_promedio_simple <- mean(
+  demanda_asignada$tiempo_respuesta_min
+)
+
+tiempo_promedio_ponderado <- weighted.mean(
+  demanda_asignada$tiempo_respuesta_min,
+  demanda_asignada$riesgo
+)
+
+tiempo_maximo_observado <- max(
+  demanda_asignada$tiempo_respuesta_min
+)
+
+metricas_modelo <- tibble(
+  `Número de brigadas` = numero_brigadas,
+  
+  `Tiempo objetivo (min)` = tiempo_maximo_min,
+  
+  `Riesgo cubierto (%)` = round(
+    porcentaje_riesgo_cubierto,
+    2
+  ),
+  
+  `Celdas cubiertas (%)` = round(
+    porcentaje_celdas_cubiertas,
+    2
+  ),
+  
+  `Tiempo promedio (min)` = round(
+    tiempo_promedio_simple,
+    2
+  ),
+  
+  `Tiempo promedio ponderado (min)` = round(
+    tiempo_promedio_ponderado,
+    2
+  ),
+  
+  `Tiempo máximo estimado (min)` = round(
+    tiempo_maximo_observado,
+    2
+  )
+)
+
+# ------------------------------------------------------------------------------
+# Coordenadas geográficas de los sitios seleccionados
+# ------------------------------------------------------------------------------
+
+brigadas_wgs84 <- brigadas_optimas %>%
+  st_transform(4326)
+
+coordenadas_brigadas <- st_coordinates(
+  brigadas_wgs84
+)
+
+tabla_brigadas <- brigadas_wgs84 %>%
+  st_drop_geometry() %>%
+  mutate(
+    Longitud = coordenadas_brigadas[, 1],
+    Latitud = coordenadas_brigadas[, 2]
+  ) %>%
+  select(
+    numero_brigada,
+    municipio_candidato,
+    Latitud,
+    Longitud
+  )
+
+# ------------------------------------------------------------------------------
+# Preparar textos para mapa interactivo
+# ------------------------------------------------------------------------------
+
+demanda_mapa <- demanda_asignada %>%
+  mutate(
+    tooltip_riesgo = paste0(
+      "<b>Índice de riesgo:</b> ",
+      round(riesgo, 3),
+      "<br>",
+      "<b>Incendios:</b> ",
+      frecuencia,
+      "<br>",
+      "<b>Superficie acumulada:</b> ",
+      round(superficie_total, 1),
+      " ha<br>",
+      "<b>Persistencia:</b> ",
+      round(persistencia * 100, 1),
+      "%<br>",
+      "<b>Brigada asignada:</b> ",
+      brigada_asignada,
+      "<br>",
+      "<b>Tiempo estimado:</b> ",
+      round(tiempo_respuesta_min, 1),
+      " min"
+    )
+  )
+
+brigadas_mapa <- brigadas_optimas %>%
+  mutate(
+    tooltip_brigada = paste0(
+      "<b>Brigada ",
+      numero_brigada,
+      "</b><br>",
+      "<b>Ubicación:</b> ",
+      municipio_candidato
+    )
+  )
+
+# ------------------------------------------------------------------------------
+# Función para limpiar y uniformar polígonos
+# ------------------------------------------------------------------------------
+
+limpiar_poligonos <- function(x) {
+  
+  x <- st_make_valid(x)
+  
+  # Extraer únicamente componentes poligonales
+  x <- suppressWarnings(
+    st_collection_extract(
+      x,
+      type = "POLYGON"
+    )
+  )
+  
+  # Uniformar todos los objetos como MULTIPOLYGON
+  x <- suppressWarnings(
+    st_cast(
+      x,
+      "MULTIPOLYGON"
+    )
+  )
+  
+  # Eliminar geometrías vacías
+  x <- x[
+    !st_is_empty(x),
+  ]
+  
+  return(x)
+}
+
+
+# ------------------------------------------------------------------------------
+# Crear capas limpias exclusivamente para la gráfica
+# ------------------------------------------------------------------------------
+
+rejilla_plot <- limpiar_poligonos(
+  rejilla_riesgo
+)
+
+municipios_plot <- limpiar_poligonos(
+  municipios_m
+)
+
+chiapas_plot <- limpiar_poligonos(
+  chiapas_m
+)
+
+# ------------------------------------------------------------------------------
+# Preparar puntos de brigadas para Plotly
+# ------------------------------------------------------------------------------
+
+brigadas_plot <- brigadas_mapa %>%
+  st_cast(
+    "POINT",
+    warn = FALSE
+  )
+
+coordenadas_brigadas_plot <- st_coordinates(
+  brigadas_plot
+)
+
+brigadas_xy <- brigadas_plot %>%
+  st_drop_geometry() %>%
+  mutate(
+    X = coordenadas_brigadas_plot[, 1],
+    Y = coordenadas_brigadas_plot[, 2]
+  )
+
+
+# ------------------------------------------------------------------------------
+# Crear mapa compatible con ggplotly
+# ------------------------------------------------------------------------------
+
+mapa_brigadas <- ggplot() +
+  
+  # Cuadrícula de riesgo
+  geom_sf(
+    data = rejilla_plot,
+    aes(
+      fill = riesgo,
+      text = paste0(
+        "<b>Índice de riesgo:</b> ",
+        round(riesgo, 3),
+        "<br>",
+        "<b>Incendios:</b> ",
+        frecuencia,
+        "<br>",
+        "<b>Superficie acumulada:</b> ",
+        round(superficie_total, 1),
+        " ha<br>",
+        "<b>Persistencia:</b> ",
+        round(persistencia * 100, 1),
+        "%"
+      )
+    ),
+    color = NA
+  ) +
+  
+  scale_fill_gradient(
+    low = "white",
+    high = "red",
+    limits = c(0, 1),
+    name = "Índice de\nriesgo"
+  ) +
+  
+  # Límites municipales
+  geom_sf(
+    data = municipios_plot,
+    fill = NA,
+    color = "gray55",
+    linewidth = 0.15
+  ) +
+  
+  # Límite estatal
+  geom_sf(
+    data = chiapas_plot,
+    fill = NA,
+    color = "black",
+    linewidth = 0.80
+  ) +
+  
+  # Ubicación de brigadas
+  geom_point(
+    data = brigadas_xy,
+    aes(
+      x = X,
+      y = Y,
+      text = tooltip_brigada
+    ),
+    shape = 23,
+    size = 5,
+    fill = "deepskyblue",
+    color = "black",
+    stroke = 1
+  ) +
+  
+  # Número de brigada
+  geom_text(
+    data = brigadas_xy,
+    aes(
+      x = X,
+      y = Y,
+      label = numero_brigada
+    ),
+    size = 3,
+    fontface = "bold"
+  ) +
+  
+  coord_sf(
+    crs = st_crs(rejilla_plot),
+    expand = FALSE
+  ) +
+  
+  labs(
+    title = "Ubicación estratégica de brigadas contra incendios",
+    
+    subtitle = paste0(
+      numero_brigadas,
+      " brigadas | Tiempo objetivo: ",
+      tiempo_maximo_min,
+      " minutos | Riesgo cubierto: ",
+      round(
+        porcentaje_riesgo_cubierto,
+        1
+      ),
+      "%"
+    ),
+    
+    caption = paste(
+      "Los sitios se obtuvieron mediante un modelo",
+      "de máxima cobertura ponderada por riesgo."
+    )
+  ) +
+  
+  theme_minimal() +
+  
+  theme(
+    axis.title = element_blank(),
+    
+    plot.title = element_text(
+      face = "bold",
+      size = 15
+    ),
+    
+    legend.position = "right",
+    
+    panel.grid.minor = element_blank()
+  )
+
+# ------------------------------------------------------------------------------
+# Convertir a Plotly
+# ------------------------------------------------------------------------------
+
+mapa_brigadas_interactivo <- ggplotly(
+  mapa_brigadas,
+  tooltip = "text"
+) %>%
+  
+  layout(
+    hoverlabel = list(
+      bgcolor = "white",
+      
+      font = list(
+        color = "black",
+        size = 11
+      )
+    ),
+    
+    margin = list(
+      l = 40,
+      r = 150,
+      t = 100,
+      b = 50
+    ),
+    
+    dragmode = "zoom"
+  )
+```
+
+
+```{r}
+#| label: mapa-brigadas
+#| echo: false
+#| warning: false
+#| message: false
+#| column: screen-inset
+#| fig-width: 5
+#| fig-height: 8
+# Mostrar mapa interactivo
+mapa_brigadas_interactivo
+```
+
+

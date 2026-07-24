@@ -1,0 +1,481 @@
+---
+lang: es
+---
+
+# Resumen {.unnumbered}
+
+::: {style="text-align: justify"}
+Los incendios forestales representan una problemática ambiental y territorial de gran relevancia en Chiapas debido a su recurrencia, la superficie afectada y su distribución heterogénea. El presente estudio desarrolla un análisis espacial para identificar zonas prioritarias y proponer ubicaciones estratégicas para brigadas contra incendios forestales. La metodología integra registros georreferenciados correspondientes al periodo 2022–2026, información sobre la superficie afectada y la persistencia temporal de los eventos.
+
+El territorio se dividió mediante una cuadrícula hexagonal y, para cada celda, se construyó un índice relativo de riesgo compuesto por la frecuencia de incendios, la superficie acumulada afectada y la presencia de eventos en distintos años. Posteriormente, se formuló un modelo de máxima cobertura ponderada, cuyo objetivo fue seleccionar un número limitado de ubicaciones capaces de cubrir la mayor proporción posible del riesgo dentro de un tiempo máximo estimado de respuesta.
+
+Se analizaron dos escenarios. En el escenario estatal, las ubicaciones seleccionadas fueron Ángel Albino Corzo, Arriaga, Cintalapa, Osumacinta, Totolapa y Villa Corzo. En el escenario enfocado en la costa de Chiapas y en las comunidades prioritarias proporcionadas, el modelo seleccionó Ejido Mapastepec, Frontera Comalapa, Mazatán, Pijijiapan, Tonalá y Villacomaltitlán. En este segundo escenario, la función objetivo combinó la cobertura del riesgo histórico con la cobertura de las comunidades georreferenciadas.
+
+Los resultados muestran que la localización de las brigadas depende de la escala territorial, del conjunto de sitios candidatos y de los criterios considerados en el modelo. La metodología propuesta constituye una herramienta reproducible para comparar escenarios, priorizar comunidades y apoyar la planeación territorial de recursos destinados a la prevención y atención de incendios forestales.
+:::
+
+**Palabras clave:** incendios forestales, análisis espacial, máxima cobertura, brigadas, localización óptima, Chiapas.
+
+# Introducción {.unnumbered}
+
+::: {style="text-align: justify"}
+El estado de Chiapas es uno de los territorios con mayor riqueza biológica y cultural de México. Alberga aproximadamente el $25\%$ de las especies del país y ecosistemas estratégicos como la Selva Lacandona, los bosques de pino-encino de la Sierra Madre de Chiapas, y áreas naturales protegidas de relevancia internacional como La Sepultura, El Ocote, El Triunfo y el Cañón del Sumidero. Estas regiones no solo son refugio de biodiversidad, sino que también proveen servicios ecosistémicos esenciales: captura de carbono, recarga de acuíferos, regulación climática y medios de vida para comunidades indígenas y campesinas.
+
+Sin embargo, Chiapas enfrenta una alta vulnerabilidad a los incendios forestales, agravada por factores climáticos como temporadas de sequía cada vez más prolongadas y temperaturas extremas vinculadas al cambio climático; factores antrópicos como la expansión de la frontera agropecuaria, el uso del fuego como herramienta de manejo de tierras y las quemas no controladas; y factores orográficos, ya que la topografía accidentada dificulta el combate y acelera la propagación del fuego. En los últimos años, los incendios en Chiapas han mostrado una tendencia al alza en frecuencia, extensión e intensidad, con consecuencias devastadoras: pérdida de cobertura forestal, degradación de suelos, afectación a la biodiversidad, emisiones de gases de efecto invernadero, riesgos para la salud humana e impactos económicos en los sectores forestal, turístico y agrícola.
+
+Por ello, analizar la distribución espacial y temporal de los incendios tanto en número de eventos como en superficie afectada resulta fundamental para la gestión del riesgo y la toma de decisiones. Conocer dónde se concentran los incendios, cuándo ocurren con mayor frecuencia, qué factores los desencadenan y qué ecosistemas son los más afectados permite priorizar áreas para la prevención, asignar eficientemente recursos de combate, diseñar políticas de restauración ecológica posincendio y sensibilizar a las comunidades sobre la urgencia de actuar.
+
+En este contexto, el presente estudio utiliza registros oficiales de incendios de los años 2022 a 2026 para generar mapas interactivos que combinan la densidad de superficie quemada, ponderada por hectáreas afectadas, representada con un mapa de calor que revela los focos de mayor impacto, y la ubicación puntual de cada incendio con información detallada sobre superficie, municipio, causa y tipo de vegetación. Estas herramientas permiten a gestores ambientales, investigadores y comunidades explorar dinámicamente el territorio, identificar patrones espaciales y validar hipótesis sobre los factores de riesgo. El objetivo final es contribuir a una estrategia integral de manejo del fuego que equilibre la conservación de la riqueza natural de Chiapas con el desarrollo sustentable de sus poblaciones.
+:::
+
+```{r}
+# ------------------------------------------------------------------------------
+# Mapa interactivo de puntos de incendio en Chiapas (2022-2026)
+# Sin mapa de calor, solo puntos con tooltip de Superficie
+# ------------------------------------------------------------------------------
+
+library(tidyverse)
+library(sf)
+library(geodata)
+library(ggplot2)
+library(plotly)
+library(RColorBrewer)
+library(spatstat.geom)
+library(spatstat.explore)
+library(scales)
+
+# ------------------------------------------------------------------------------
+# 1. Leer y combinar archivos CSV
+# ------------------------------------------------------------------------------
+
+files <- list.files(pattern = "Incendios.*\\.csv$", full.names = TRUE)
+
+if (length(files) == 0) {
+  stop("No se encontraron archivos 'Incendios*.csv' en el directorio actual.")
+}
+
+df_list <- lapply(files, function(f) {
+  df <- read.csv(f, stringsAsFactors = FALSE)
+  year <- as.numeric(gsub(".*Incendios\\s*(\\d{4})\\.csv", "\\1", f))
+  df$year <- year
+  df
+})
+
+fires_all <- bind_rows(df_list)
+
+# ------------------------------------------------------------------------------
+# 2. Limpiar datos
+# ------------------------------------------------------------------------------
+
+fires_all <- fires_all %>%
+  mutate(
+    Lat = as.numeric(Latitud),
+    Lon = as.numeric(Longitud),
+    Superficie = as.numeric(Superficie)
+  ) %>%
+  filter(
+    !is.na(Lat) & !is.na(Lon),
+    !is.na(Superficie) & Superficie > 0,
+    Lat >= 14.5 & Lat <= 17.5,
+    Lon >= -94.5 & Lon <= -90.5
+  )
+
+if (nrow(fires_all) == 0) stop("No hay datos válidos.")
+
+# ------------------------------------------------------------------------------
+# 3. Polígonos de Chiapas (estado y municipios) para contexto
+# ------------------------------------------------------------------------------
+
+mexico_states <- gadm(country = "MEX", level = 1, path = tempdir())
+chiapas <- mexico_states[mexico_states$NAME_1 == "Chiapas", ]
+chiapas <- st_as_sf(chiapas) %>% st_transform(crs = 4326)
+
+mexico_municipios <- gadm(country = "MEX", level = 2, path = tempdir())
+municipios_chiapas <- mexico_municipios[mexico_municipios$NAME_1 == "Chiapas", ]
+municipios_chiapas <- st_as_sf(municipios_chiapas) %>%
+  st_cast("MULTIPOLYGON") %>%
+  st_transform(crs = 4326)
+
+bbox_chiapas <- st_bbox(chiapas)
+
+
+# ------------------------------------------------------------------------------
+# 4. Crear texto para tooltip de puntos
+# ------------------------------------------------------------------------------
+
+fires_all <- fires_all %>%
+  mutate(
+    year = factor(year),
+    tooltip_text = paste0(
+      "<b>Superficie:</b> ", round(Superficie, 1), " ha<br>",
+      "<b>Municipio:</b> ", Municipio, "<br>",
+      "<b>Año:</b> ", year, "<br>",
+      "<b>Causa:</b> ", `Posible.causa`, "<br>",
+      "<b>Vegetación:</b> ", `Tipo.vegetación`
+    )
+  )
+
+# ------------------------------------------------------------------------------
+# 5. Crear superficie suavizada (kernel density) ponderada por Superficie
+# ------------------------------------------------------------------------------
+
+xmin <- as.numeric(bbox_chiapas["xmin"])
+xmax <- as.numeric(bbox_chiapas["xmax"])
+ymin <- as.numeric(bbox_chiapas["ymin"])
+ymax <- as.numeric(bbox_chiapas["ymax"])
+
+# Ventana espacial
+ventana <- spatstat.geom::owin(
+  xrange = c(xmin, xmax),
+  yrange = c(ymin, ymax)
+)
+
+# Crear patrón de puntos
+pp <- spatstat.geom::ppp(
+  x = fires_all$Lon,
+  y = fires_all$Lat,
+  window = ventana
+)
+
+# Densidad suavizada usando Superficie como peso
+# sigma controla qué tan "smooth" se ve:
+#   sigma pequeño = más detalle
+#   sigma grande   = más suave
+dens <- spatstat.explore::density.ppp(
+  pp,
+  weights = fires_all$Superficie,
+  sigma = 0.10,      # prueba 0.08, 0.10, 0.12 o 0.15
+  eps = 0.01,        # resolución de la malla
+  at = "pixels"
+)
+
+# Convertir a data frame
+dens_df <- as.data.frame(dens)
+names(dens_df) <- c("x", "y", "intensidad")
+
+# Convertir a sf para recortar al polígono de Chiapas
+dens_sf <- st_as_sf(
+  dens_df,
+  coords = c("x", "y"),
+  crs = 4326,
+  remove = FALSE
+)
+
+# Mantener solo pixeles dentro de Chiapas
+dentro <- lengths(st_within(dens_sf, chiapas)) > 0
+dens_df <- dens_df[dentro, ]
+
+# Reescalar a [0,1] para que la escala sea blanco -> rojo
+dens_df <- dens_df %>%
+  mutate(
+    intensidad_rel = scales::rescale(intensidad, to = c(0, 1))
+  )
+# ------------------------------------------------------------------------------
+# 6. Crear mapa
+# ------------------------------------------------------------------------------
+
+p <- ggplot() +
+  
+  # --------------------------------------------------------------------------
+# Capa suavizada de superficie afectada
+# --------------------------------------------------------------------------
+geom_raster(
+  data = dens_df,
+  aes(
+    x = x,
+    y = y,
+    fill = intensidad_rel
+  ),
+  interpolate = TRUE,
+  alpha = 0.95
+) +
+  
+  # Escala blanco-rojo
+  # Se elimina el título aquí para colocarlo correctamente con Plotly
+  scale_fill_gradient(
+    low = "white",
+    high = "red",
+    limits = c(0, 1),
+    name = NULL
+  ) +
+  
+  # --------------------------------------------------------------------------
+# Límites municipales
+# --------------------------------------------------------------------------
+geom_sf(
+  data = municipios_chiapas,
+  fill = NA,
+  color = "gray60",
+  linewidth = 0.20,
+  alpha = 0.45
+) +
+  
+  # --------------------------------------------------------------------------
+# Límite estatal
+# --------------------------------------------------------------------------
+geom_sf(
+  data = chiapas,
+  fill = NA,
+  color = "black",
+  linewidth = 0.90
+) +
+  
+  # --------------------------------------------------------------------------
+# Puntos de incendios
+# --------------------------------------------------------------------------
+geom_point(
+  data = fires_all,
+  aes(
+    x = Lon,
+    y = Lat,
+    color = year,
+    shape = year,
+    text = tooltip_text
+  ),
+  size = 1.1,
+  alpha = 0.70
+) +
+  
+  # Colores para los años
+  # El título se colocará posteriormente con Plotly
+  scale_color_brewer(
+    palette = "Set1",
+    name = NULL
+  ) +
+  
+  # Límites geográficos de Chiapas
+  coord_sf(
+    xlim = c(xmin, xmax),
+    ylim = c(ymin, ymax),
+    expand = FALSE
+  ) +
+  
+  labs(
+    title = "Incendios forestales en Chiapas (2022-2026)",
+    
+    subtitle = paste0(
+      "Total de eventos: ",
+      format(
+        nrow(fires_all),
+        big.mark = ","
+      ),
+      " | Superficie total afectada: ",
+      format(
+        round(
+          sum(
+            fires_all$Superficie,
+            na.rm = TRUE
+          ),
+          0
+        ),
+        big.mark = ","
+      ),
+      " ha"
+    ),
+    
+    caption = paste(
+      "La capa blanco-rojo representa una superficie suavizada",
+      "ponderada por las hectáreas afectadas."
+    )
+  ) +
+  
+  theme_minimal() +
+  
+  theme(
+    axis.title = element_blank(),
+    
+    axis.text = element_text(
+      size = 8
+    ),
+    
+    plot.title = element_text(
+      size = 16,
+      face = "bold"
+    ),
+    
+    plot.subtitle = element_text(
+      size = 10
+    ),
+    
+    plot.caption = element_text(
+      size = 8,
+      hjust = 0
+    ),
+    
+    # La leyenda de los años se coloca debajo
+    legend.position = "bottom",
+    
+    legend.box = "horizontal",
+    
+    legend.direction = "horizontal",
+    
+    legend.spacing.x = grid::unit(
+      0.3,
+      "cm"
+    ),
+    
+    panel.grid.major = element_line(
+      color = "gray90",
+      linewidth = 0.20
+    ),
+    
+    panel.grid.minor = element_blank(),
+    
+    plot.margin = margin(
+      t = 10,
+      r = 90,
+      b = 35,
+      l = 10
+    )
+  )
+
+# ------------------------------------------------------------------------------
+# 7. Convertir el mapa a Plotly
+# ------------------------------------------------------------------------------
+
+mapa_interactivo <- ggplotly(
+  p,
+  tooltip = "text",
+  dynamicTicks = FALSE
+)
+
+# ------------------------------------------------------------------------------
+# 7.1. Ajustar la barra continua de superficie
+# ------------------------------------------------------------------------------
+
+for (i in seq_along(mapa_interactivo$x$data)) {
+  
+  traza <- mapa_interactivo$x$data[[i]]
+  
+  # --------------------------------------------------------------------------
+  # Caso 1: la barra se encuentra directamente en colorbar
+  # --------------------------------------------------------------------------
+  if (!is.null(traza$colorbar)) {
+    
+    mapa_interactivo$x$data[[i]]$colorbar$x <- 1.04
+    
+    mapa_interactivo$x$data[[i]]$colorbar$xanchor <- "left"
+    
+    mapa_interactivo$x$data[[i]]$colorbar$y <- 0.55
+    
+    mapa_interactivo$x$data[[i]]$colorbar$yanchor <- "middle"
+    
+    mapa_interactivo$x$data[[i]]$colorbar$len <- 0.55
+    
+    mapa_interactivo$x$data[[i]]$colorbar$thickness <- 18
+    
+    mapa_interactivo$x$data[[i]]$colorbar$title <- list(
+      text = "<b>Superficie relativa</b>",
+      side = "top",
+      font = list(
+        size = 12
+      )
+    )
+  }
+  
+  # --------------------------------------------------------------------------
+  # Caso 2: la barra se encuentra dentro de marker
+  # --------------------------------------------------------------------------
+  if (!is.null(traza$marker$colorbar)) {
+    
+    mapa_interactivo$x$data[[i]]$marker$colorbar$x <- 1.04
+    
+    mapa_interactivo$x$data[[i]]$marker$colorbar$xanchor <- "left"
+    
+    mapa_interactivo$x$data[[i]]$marker$colorbar$y <- 0.55
+    
+    mapa_interactivo$x$data[[i]]$marker$colorbar$yanchor <- "middle"
+    
+    mapa_interactivo$x$data[[i]]$marker$colorbar$len <- 0.55
+    
+    mapa_interactivo$x$data[[i]]$marker$colorbar$thickness <- 18
+    
+    mapa_interactivo$x$data[[i]]$marker$colorbar$title <- list(
+      text = "<b>Superficie relativa</b>",
+      side = "top",
+      font = list(
+        size = 12
+      )
+    )
+  }
+  
+  # --------------------------------------------------------------------------
+  # Evitar que la capa de calor aparezca como elemento de la leyenda de años
+  # --------------------------------------------------------------------------
+  if (
+    !is.null(traza$type) &&
+    traza$type %in% c(
+      "heatmap",
+      "contour"
+    )
+  ) {
+    
+    mapa_interactivo$x$data[[i]]$showlegend <- FALSE
+  }
+}
+
+# ------------------------------------------------------------------------------
+# 7.2. Diseño final del mapa interactivo
+# ------------------------------------------------------------------------------
+
+mapa_interactivo <- mapa_interactivo %>%
+  layout(
+    
+    # ------------------------------------------------------------------------
+    # Leyenda categórica de años debajo del mapa
+    # ------------------------------------------------------------------------
+    legend = list(
+      title = list(
+        text = "<b>Año</b>"
+      ),
+      
+      orientation = "h",
+      
+      x = 0.48,
+      
+      xanchor = "center",
+      
+      y = -0.12,
+      
+      yanchor = "top",
+      
+      font = list(
+        size = 11
+      ),
+      
+      traceorder = "normal"
+    ),
+    
+    # ------------------------------------------------------------------------
+    # Márgenes
+    # Derecha: espacio para el medidor
+    # Abajo: espacio para los años
+    # ------------------------------------------------------------------------
+    margin = list(
+      l = 55,
+      r = 190,
+      t = 95,
+      b = 125
+    ),
+    
+    # Configuración del tooltip
+    hoverlabel = list(
+      bgcolor = "white",
+      
+      bordercolor = "gray50",
+      
+      font = list(
+        size = 11,
+        color = "black"
+      )
+    ),
+    
+    dragmode = "zoom"
+  )
+
+# Mostrar el mapa
+mapa_interactivo
+
+```
+
+

@@ -1,0 +1,155 @@
+---
+lang: es
+---
+
+
+# Resultados {.unnumbered}
+
+## Escenario estatal
+
+::: {style="text-align: justify"}
+Para el análisis estatal se consideraron como sitios candidatos los municipios de Chiapas. Con una disponibilidad de seis brigadas, el modelo de máxima cobertura seleccionó las ubicaciones presentadas en la @tbl-brigadas-estatales.
+:::
+
+| Brigada | Municipio seleccionado |
+|:---:|---|
+| 1 | Ángel Albino Corzo |
+| 2 | Arriaga |
+| 3 | Cintalapa |
+| 4 | Osumacinta |
+| 5 | Totolapa |
+| 6 | Villa Corzo |
+
+: Municipios seleccionados en el escenario estatal. {#tbl-brigadas-estatales}
+
+::: {style="text-align: justify"}
+La solución presenta una distribución amplia dentro del territorio estatal. Los municipios seleccionados no corresponden necesariamente a los lugares con el mayor número individual de incendios, sino a aquellos que, en conjunto, permiten cubrir una mayor proporción del riesgo histórico dentro del tiempo máximo de respuesta establecido.
+:::
+
+La selección considera simultáneamente:
+
+- frecuencia histórica de incendios;
+- superficie acumulada afectada;
+- persistencia temporal;
+- posición geográfica de los municipios;
+- distancia respecto de las celdas con riesgo.
+
+Por tanto, las seis ubicaciones deben interpretarse como una red conjunta de atención y no como resultados independientes.
+
+---
+
+## Escenario de la costa de Chiapas
+
+::: {style="text-align: justify"}
+En el segundo escenario, el análisis se concentró en las comunidades prioritarias georreferenciadas. Estas comunidades se utilizaron como sitios candidatos para instalar las brigadas.
+:::
+
+La función objetivo combinó:
+
+- 60 % de importancia para la cobertura del riesgo histórico;
+- 40 % de importancia para la cobertura de las comunidades prioritarias.
+
+Con seis brigadas disponibles, el modelo seleccionó las ubicaciones mostradas en la @tbl-brigadas-costa.
+
+| Brigada | Municipio | Comunidad | Latitud | Longitud |
+|:---:|---|---|---:|---:|
+| 1 | Mapastepec | Ejido Mapastepec | 15.4 | -92.9 |
+| 2 | Frontera Comalapa | Frontera Comalapa | 15.7 | -92.1 |
+| 3 | Mazatán | Mazatán | 14.9 | -92.4 |
+| 4 | Pijijiapan | Pijijiapan | 15.7 | -93.2 |
+| 5 | Tonalá | Tonalá | 16.1 | -93.8 |
+| 6 | Villa Comaltitlán | Villacomaltitlán | 15.2 | -92.6 |
+
+: Comunidades seleccionadas en el escenario costero. {#tbl-brigadas-costa}
+
+::: {style="text-align: justify"}
+La distribución obtenida cubre diferentes sectores del área analizada. Tonalá y Pijijiapan proporcionan cobertura hacia la zona occidental; Ejido Mapastepec y Villacomaltitlán ocupan posiciones intermedias; Mazatán favorece la atención del sector suroriental; y Frontera Comalapa amplía la cobertura hacia el interior.
+
+La presencia de Frontera Comalapa indica que el modelo no sigue únicamente la línea del litoral, sino que responde a la distribución conjunta del riesgo y de las comunidades prioritarias.
+:::
+
+---
+
+## Comparación de los escenarios
+
+Los dos modelos produjeron ubicaciones diferentes porque responden a objetivos territoriales distintos.
+
+::: {style="text-align: justify"}
+En el escenario estatal, las brigadas se distribuyen para cubrir el riesgo en una extensión amplia de Chiapas. En el escenario costero, las ubicaciones se concentran en las comunidades proporcionadas y se incorpora explícitamente su cobertura dentro de la función objetivo.
+:::
+
+| Característica | Escenario estatal | Escenario costero |
+|---|---|---|
+| Área de análisis | Todo Chiapas | Región definida por las comunidades |
+| Sitios candidatos | Municipios del estado | Comunidades georreferenciadas |
+| Criterio principal | Cobertura del riesgo histórico | Riesgo y cobertura comunitaria |
+| Número de brigadas | 6 | 6 |
+
+: Diferencias principales entre los escenarios analizados. {#tbl-comparacion-escenarios}
+
+La diferencia entre las soluciones confirma que la localización óptima depende del área de estudio, de los sitios candidatos y de los criterios incorporados al modelo.
+
+---
+
+## Indicadores del escenario costero
+
+Los indicadores pueden incorporarse automáticamente en el documento cuando los objetos se encuentren disponibles en R:
+
+- **Número de brigadas:** `r numero_brigadas`.
+- **Riesgo cubierto:** `r round(porcentaje_riesgo_cubierto, 1)` %.
+- **Comunidades cubiertas:** `r round(porcentaje_comunidades_cubiertas, 1)` %.
+- **Tiempo promedio hacia las comunidades:** `r round(tiempo_promedio_comunidades, 1)` minutos.
+- **Tiempo ponderado hacia las zonas de riesgo:** `r round(tiempo_promedio_riesgo, 1)` minutos.
+
+::: {style="text-align: justify"}
+El porcentaje de riesgo cubierto representa la proporción del índice histórico que puede alcanzarse dentro del tiempo objetivo. El porcentaje de comunidades cubiertas indica cuántas comunidades prioritarias se encuentran dentro del tiempo máximo de alguna brigada seleccionada.
+:::
+
+---
+
+## Interpretación cartográfica
+
+En el mapa final:
+
+- los tonos rojos representan las celdas con mayor riesgo relativo;
+- los círculos blancos indican comunidades prioritarias no seleccionadas;
+- los triángulos azules representan las comunidades elegidas para instalar brigadas;
+- las cruces moradas muestran incendios de otros estados como contexto regional.
+
+Los incendios externos se muestran únicamente con fines descriptivos y no intervienen en la optimización de las brigadas de la costa de Chiapas.
+
+---
+
+# Conclusiones
+
+El modelo de máxima cobertura permitió identificar ubicaciones estratégicas para distribuir seis brigadas contra incendios forestales.
+
+En el escenario estatal se seleccionaron:
+
+1. Ángel Albino Corzo;
+2. Arriaga;
+3. Cintalapa;
+4. Osumacinta;
+5. Totolapa;
+6. Villa Corzo.
+
+Esta configuración busca atender el riesgo distribuido en diferentes regiones de Chiapas.
+
+En el escenario costero se seleccionaron:
+
+1. Ejido Mapastepec;
+2. Frontera Comalapa;
+3. Mazatán;
+4. Pijijiapan;
+5. Tonalá;
+6. Villacomaltitlán.
+
+::: {style="text-align: justify"}
+Estas comunidades representan la combinación que maximiza la cobertura conjunta del riesgo histórico y de las comunidades prioritarias bajo los parámetros establecidos.
+
+Los resultados muestran que no existe una única distribución óptima independiente del área analizada. Cuando el objetivo cambia de una cobertura estatal a una atención regional de comunidades específicas, también cambian las ubicaciones seleccionadas.
+
+El escenario costero constituye una propuesta focalizada para la distribución de recursos en la región definida. Las comunidades seleccionadas pueden utilizarse como puntos de referencia para planear bases permanentes, temporales o estacionales.
+
+En términos generales, la metodología proporciona una herramienta cuantitativa para comparar alternativas, priorizar comunidades y orientar la planeación territorial de las brigadas contra incendios forestales.
+:::
