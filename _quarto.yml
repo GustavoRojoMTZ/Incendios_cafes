@@ -1,0 +1,70 @@
+project:
+  type: book
+
+website:
+  favicon: mini_logo_cafes.png
+  navbar:
+    logo: mini_logo_cafes.png
+    search: true
+  sidebar:
+    search: true
+    logo: mini_logo_cafes.png
+  reader-mode: true
+  search:
+    location: sidebar
+    type: overlay
+  comments:
+    hypothesis: true
+
+book:
+  title: "Incendios en chiapas, CAFES"
+  language: es
+  author: "Gustavo Enrique Rojo Martinez"
+  date: "07/23/2026"
+  sidebar:
+    logo: mini_logo_cafes.png
+    style: floating
+    collapse-level: 2
+    border: true
+    search: true
+  repo-url: https://github.com/GustavoRojoMTZ/Incendios_cafes
+  chapters:
+    - index.qmd
+    - Metodologia.qmd
+    - Brigadas costa.qmd
+    - Resultados.qmd
+    - references.qmd
+
+bibliography: references.bib
+
+format:
+  html:
+    theme:
+      light: flatly
+      dark: darkly
+    code-fold: true
+    code-summary: "Mostrar código"
+    code-tools: true
+    code-copy: true
+  pdf:
+    lang: es
+    include-in-header:
+      - packa.tex
+    template-partials:
+      - before-body.tex
+    fig-pos: 'H'
+    documentclass: scrreprt
+    papersize: us-letter
+execute:
+  echo: true
+  warning: false
+  message: false
+
+publish:
+  - id: github-pages
+    type: gh-pages
+    branch: gh-pages
+    repo: GustavoRojoMTZ/Incendios_cafes
+    
+editor: visual
+    
