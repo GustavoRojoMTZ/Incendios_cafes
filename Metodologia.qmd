@@ -1360,7 +1360,7 @@ crs_metrico <- 6372
 tamano_celda_m <- 10000   # 10 km
 
 # Número de brigadas que se desea ubicar
-numero_brigadas <- 6
+numero_brigadas <- 13
 
 # Tiempo máximo para considerar una zona cubierta
 tiempo_maximo_min <- 60
