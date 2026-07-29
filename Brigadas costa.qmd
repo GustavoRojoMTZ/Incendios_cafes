@@ -1050,7 +1050,7 @@ crs_metrico <- 6372
 tamano_celda_m <- 8000
 
 # Número de brigadas que se desea instalar
-numero_brigadas <- 6
+numero_brigadas <- 13
 
 # Tiempo máximo para cubrir las celdas con riesgo
 tiempo_maximo_riesgo_min <- 60
